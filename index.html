@@ -9,6 +9,7 @@
 body { font-family: sans-serif; padding: 10px; }
 .card { border:1px solid #ccc; padding:10px; margin:10px 0; }
 button { padding:8px; margin:5px; }
+.warn { color:red; }
 </style>
 </head>
 
@@ -16,19 +17,25 @@ button { padding:8px; margin:5px; }
 
 <h2>ShiftOne v3.6</h2>
 
+<!-- 日期 -->
+<div class="card">
+<h3>排班日期</h3>
+開始：<input type="date" id="start">
+結束：<input type="date" id="end">
+</div>
+
 <!-- 員工 -->
 <div class="card">
 <h3>員工</h3>
-<input id="name" placeholder="姓名">
 
-<select id="type">
+<input id="empName" placeholder="姓名">
+
+<select id="empType">
   <option>正職</option>
   <option>工讀</option>
 </select>
 
-<br><br>
-
-<h4>可上班時間（09-23）</h4>
+<h4>可上班時間（09–23）</h4>
 <div id="hours"></div>
 
 <h4>休假</h4>
@@ -49,106 +56,162 @@ button { padding:8px; margin:5px; }
 
 <!-- 結果 -->
 <div class="card">
-<h3>結果</h3>
+<h3>班表</h3>
 <div id="result"></div>
 </div>
 
+<!-- 缺人 -->
+<div class="card">
+<h3>缺人提醒</h3>
+<div id="warn"></div>
+</div>
+
 <script>
+
 let employees = [];
 let schedule = [];
-
 let offTemp = [];
 
-
-// 小時勾選
+// 小時
 let hoursDiv = document.getElementById("hours");
-let hours = [];
-
 for(let i=9;i<=23;i++){
-  let h = document.createElement("label");
-  h.innerHTML = `<input type='checkbox' value='${i}'> ${i}:00 `;
-  hoursDiv.appendChild(h);
+  hoursDiv.innerHTML += `<label><input type="checkbox" value="${i}">${i}:00 </label>`;
 }
-
 
 // 加休假
 function addOff(){
-  offTemp.push(offDate.value);
-  document.getElementById("offList").innerHTML = offTemp.join(", ");
+  let d = document.getElementById("offDate").value;
+  if(d){
+    offTemp.push(d);
+    document.getElementById("offList").innerText = offTemp.join(", ");
+  }
 }
 
-
-// 新增員工
+// 新增員工（修正 undefined）
 function addEmp(){
 
-  let checked = [...document.querySelectorAll("#hours input:checked")]
+  let name = document.getElementById("empName").value.trim();
+  if(!name){
+    alert("請輸入姓名");
+    return;
+  }
+
+  let type = document.getElementById("empType").value;
+
+  let hours = [...document.querySelectorAll("#hours input:checked")]
     .map(e=>Number(e.value));
 
   employees.push({
-    name: name.value,
-    type: type.value,
-    hours: checked,
+    name,
+    type,
+    hours,
     off: [...offTemp]
   });
 
-  alert("已新增 " + name.value);
+  alert("已新增 " + name);
 
-  name.value = "";
+  document.getElementById("empName").value = "";
   offTemp = [];
-  document.getElementById("offList").innerHTML = "";
+  document.getElementById("offList").innerText = "";
 }
 
 
-// 自動排班（簡化穩定版）
+// 產生日期
+function getDates(start,end){
+  let arr=[];
+  let d=new Date(start);
+  while(d<=new Date(end)){
+    arr.push(d.toISOString().slice(0,10));
+    d.setDate(d.getDate()+1);
+  }
+  return arr;
+}
+
+
+// 自動排班 + 缺人
 function auto(){
 
   schedule = [];
+  let warn = {};
 
-  for(let h=9;h<=23;h++){
+  let start = document.getElementById("start").value;
+  let end = document.getElementById("end").value;
 
-    let available = employees.filter(e=>{
-      return e.hours.includes(h);
-    });
-
-    if(available.length>0){
-      schedule.push({
-        hour:h,
-        name: available[0].name
-      });
-    }
+  if(!start || !end){
+    alert("請選日期");
+    return;
   }
 
+  let dates = getDates(start,end);
+
+  dates.forEach(date=>{
+
+    for(let h=9;h<=23;h++){
+
+      let need = 1; // 每小時需要1人（你之後可改）
+
+      let available = employees.filter(e=>{
+        if(e.off.includes(date)) return false;
+        return e.hours.includes(h);
+      });
+
+      if(available.length < need){
+        warn[`${date} ${h}:00`] = need - available.length;
+      }
+
+      available.slice(0,need).forEach(e=>{
+        schedule.push({
+          date,
+          hour:h,
+          name:e.name
+        });
+      });
+
+    }
+
+  });
+
   render();
+  renderWarn(warn);
 }
 
 
 // 顯示
 function render(){
   document.getElementById("result").innerHTML =
-    schedule.map(s=>`${s.hour}:00 - ${s.name}`).join("<br>");
+    schedule.map(s=>`${s.date} ${s.hour}:00 - ${s.name}`).join("<br>");
+}
+
+// 缺人
+function renderWarn(warn){
+  let w = Object.entries(warn)
+    .map(([k,v])=>`<div class="warn">${k} 缺 ${v} 人</div>`)
+    .join("");
+
+  document.getElementById("warn").innerHTML = w || "沒有缺人";
 }
 
 
-// ICS輸出（TimeTree用）
+// ICS
 function exportICS(){
 
-  let ics = "BEGIN:VCALENDAR\nVERSION:2.0\n";
+  let ics="BEGIN:VCALENDAR\nVERSION:2.0\n";
 
   schedule.forEach(s=>{
-    ics += `
+    ics+=`
 BEGIN:VEVENT
 SUMMARY:${s.name}
-DTSTART:20260421T${String(s.hour).padStart(2,'0')}0000
-DTEND:20260421T${String(s.hour+1).padStart(2,'0')}0000
+DTSTART:${s.date.replace(/-/g,"")}T${String(s.hour).padStart(2,'0')}0000
+DTEND:${s.date.replace(/-/g,"")}T${String(s.hour+1).padStart(2,'0')}0000
 END:VEVENT`;
   });
 
-  ics += "\nEND:VCALENDAR";
+  ics+="\nEND:VCALENDAR";
 
-  let blob = new Blob([ics], {type:"text/calendar"});
-  let a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "shift.ics";
+  let blob=new Blob([ics],{type:"text/calendar"});
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="shift.ics";
   a.click();
 }
 
