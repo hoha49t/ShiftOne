@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ShiftOne v2.5</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.json">
+
+<style>
+body { font-family: sans-serif; padding: 10px; }
+input, button { margin:5px; padding:8px; }
+.card { border:1px solid #ccc; padding:8px; margin:5px 0; }
+</style>
+</head>
+
+<body>
+<h2>ShiftOne v2.5</h2>
+
+<h3>日期範圍</h3>
+<input type="date" id="start">
+<input type="date" id="end">
+
+<hr>
+
+<h3>員工</h3>
+<input id="name" placeholder="姓名">
+<input id="shift" placeholder="時段 09:00-17:00,17:00-23:00">
+<input id="off" placeholder="休假 2026-04-25,2026-04-26">
+<button onclick="addEmployee()">新增</button>
+
+<div id="empList"></div>
+
+<hr>
+
+<h3>班別需求</h3>
+<input id="shiftName" placeholder="班名">
+<input id="shiftTime" placeholder="時間 09:00-17:00">
+<input id="need" placeholder="人數">
+<button onclick="addShift()">新增</button>
+
+<div id="shiftList"></div>
+
+<hr>
+
+<h3>排班</h3>
+<button onclick="autoSchedule()">自動排班</button>
+<button onclick="clearSchedule()">清除</button>
+<button onclick="generateICS()">產生 ICS</button>
+
+<div id="result"></div>
+
+<script>
+let employees = JSON.parse(localStorage.getItem("emp")) || [];
+let shifts = JSON.parse(localStorage.getItem("shift")) || [];
+let schedule = [];
+let workCount = {}; // 平衡工時
+
+function save(){
+  localStorage.setItem("emp", JSON.stringify(employees));
+  localStorage.setItem("shift", JSON.stringify(shifts));
+}
+
+function addEmployee(){
+  employees.push({
+    name: name.value,
+    shifts: shift.value.split(","),
+    offDays: off.value.split(",")
+  });
+  save(); render();
+}
+
+function addShift(){
+  shifts.push({
+    name: shiftName.value,
+    time: shiftTime.value,
+    needed: parseInt(need.value)
+  });
+  save(); render();
+}
+
+function render(){
+  empList.innerHTML = employees.map((e,i)=>`
+  <div class="card">
+  ${e.name}
+  <button onclick="delEmp(${i})">刪除</button>
+  </div>`).join("");
+
+  shiftList.innerHTML = shifts.map((s,i)=>`
+  <div class="card">
+  ${s.name} (${s.time})
+  <button onclick="delShift(${i})">刪除</button>
+  </div>`).join("");
+}
+
+function delEmp(i){ employees.splice(i,1); save(); render(); }
+function delShift(i){ shifts.splice(i,1); save(); render(); }
+
+function getDates(start,end){
+  let arr=[];
+  let d=new Date(start);
+  while(d<=new Date(end)){
+    arr.push(d.toISOString().slice(0,10));
+    d.setDate(d.getDate()+1);
+  }
+  return arr;
+}
+
+function autoSchedule(){
+  schedule=[];
+  workCount={};
+
+  let dates = getDates(start.value,end.value);
+
+  dates.forEach(date=>{
+    shifts.forEach(s=>{
+      let available = employees.filter(e=>{
+        if(e.offDays.includes(date)) return false;
+        return e.shifts.includes(s.time);
+      });
+
+      // 🔥 平均分配
+      available.sort((a,b)=>
+        (workCount[a.name]||0)-(workCount[b.name]||0)
+      );
+
+      let pick = available.slice(0, s.needed);
+
+      pick.forEach(p=>{
+        schedule.push({
+          name:p.name,
+          date,
+          shift:s.time
+        });
+        workCount[p.name]=(workCount[p.name]||0)+1;
+      });
+
+    });
+  });
+
+  renderResult();
+}
+
+function renderResult(){
+  result.innerHTML = schedule.map((s,i)=>`
+  <div class="card">
+  ${s.date} ${s.name}
+  <button onclick="removeItem(${i})">刪</button>
+  </div>`).join("");
+}
+
+function removeItem(i){
+  schedule.splice(i,1);
+  renderResult();
+}
+
+function clearSchedule(){
+  schedule=[];
+  renderResult();
+}
+
+function format(date,time){
+  return date.replace(/-/g,"")+"T"+time.replace(":","")+"00";
+}
+
+function generateICS(){
+  let version = new Date().getTime();
+  let ics="BEGIN:VCALENDAR\nVERSION:2.0\n";
+
+  schedule.forEach(s=>{
+    let [start,end]=s.shift.split("-");
+    ics+=`
+BEGIN:VEVENT
+SUMMARY:${s.name} 上班
+DTSTART:${format(s.date,start)}
+DTEND:${format(s.date,end)}
+END:VEVENT`;
+  });
+
+  ics+="\nEND:VCALENDAR";
+
+  let blob=new Blob([ics],{type:"text/calendar"});
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="schedule_"+version+".ics";
+  a.click();
+}
+
+render();
+</script>
+</body>
+</html>
