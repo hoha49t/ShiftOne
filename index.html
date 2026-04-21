@@ -2,59 +2,57 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>ShiftOne v3.6</title>
+<title>ShiftOne v3.7</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body { font-family: sans-serif; padding:10px; }
-.card { border:1px solid #ccc; padding:10px; margin:10px 0; }
-.warn { color:red; }
-label { display:inline-block; width:70px; }
+body { font-family:sans-serif; padding:10px;}
+.card { border:1px solid #ccc; padding:10px; margin:10px 0;}
+.warn { color:red;}
 </style>
 </head>
 
 <body>
 
-<h2>ShiftOne v3.6（穩定版）</h2>
+<h2>ShiftOne v3.7（營運版）</h2>
 
 <div class="card">
-<h3>排班日期</h3>
-開始：<input type="date" id="start"><br><br>
+開始：<input type="date" id="start">
 結束：<input type="date" id="end">
 </div>
 
 <div class="card">
 <h3>新增員工</h3>
 
-<input id="empName" placeholder="姓名"><br><br>
+<input id="name" placeholder="姓名">
 
-主店：
-<select id="mainStore">
-  <option value="A">A店</option>
-  <option value="B">B店</option>
+<select id="type">
+  <option>正職</option>
+  <option>兼職</option>
+  <option>工讀生</option>
 </select>
 
 <br><br>
 
-支援店：
-<label><input type="checkbox" value="A" class="storeCheck">A</label>
-<label><input type="checkbox" value="B" class="storeCheck">B</label>
+主店：
+<select id="store">
+  <option>大安</option>
+  <option>遼寧</option>
+</select>
 
-<h4>可上班時間（點選）</h4>
-<div id="hours"></div>
+<br><br>
 
-<h4>休假</h4>
-<input type="date" id="offDate">
-<button onclick="addOff()">加入</button>
-<div id="offList"></div>
+<label>
+  <input type="checkbox" id="tea"> 會煮茶（可上早班）
+</label>
 
-<br>
+<br><br>
+
 <button onclick="addEmp()">新增員工</button>
 </div>
 
 <div class="card">
 <button onclick="auto()">自動排班</button>
-<button onclick="exportICS()">輸出ICS</button>
 </div>
 
 <div class="card">
@@ -62,71 +60,24 @@ label { display:inline-block; width:70px; }
 <div id="result"></div>
 </div>
 
-<div class="card">
-<h3>缺人提醒</h3>
-<div id="warn"></div>
-</div>
-
 <script>
 
-let employees = [];
-let schedule = [];
-let offTemp = [];
+let employees=[];
 
-// ✅ 正確初始化時段（已修）
-let hoursDiv = document.getElementById("hours");
-for(let i=9;i<=23;i++){
-  hoursDiv.innerHTML += `
-    <label>
-      <input type="checkbox" value="${i}"> ${i}:00
-    </label>
-  `;
-}
-
-// 加休假
-function addOff(){
-  let d = document.getElementById("offDate").value;
-  if(d){
-    offTemp.push(d);
-    document.getElementById("offList").innerText = offTemp.join(", ");
-  }
-}
-
-// 新增員工（完全修正 undefined）
+// 新增員工
 function addEmp(){
 
-  let name = document.getElementById("empName").value.trim();
-  if(!name){
-    alert("請輸入姓名");
-    return;
-  }
+  let name=document.getElementById("name").value.trim();
+  if(!name){ alert("請輸入姓名"); return; }
 
-  let main = document.getElementById("mainStore").value;
+  let type=document.getElementById("type").value;
+  let store=document.getElementById("store").value;
+  let tea=document.getElementById("tea").checked;
 
-  let support = [...document.querySelectorAll(".storeCheck:checked")]
-    .map(e=>e.value)
-    .filter(v=>v !== main);
+  employees.push({name,type,store,tea});
 
-  let hrs = [...document.querySelectorAll("#hours input:checked")]
-    .map(e=>Number(e.value));
-
-  employees.push({
-    name: name,
-    mainStore: main,
-    supportStores: support,
-    hours: hrs,
-    off: [...offTemp]
-  });
-
-  alert("已新增 " + name);
-
-  document.getElementById("empName").value = "";
-  offTemp = [];
-  document.getElementById("offList").innerText = "";
-
-  // 清除勾選
-  document.querySelectorAll("#hours input").forEach(e=>e.checked=false);
-  document.querySelectorAll(".storeCheck").forEach(e=>e.checked=false);
+  alert("已新增 "+name);
+  document.getElementById("name").value="";
 }
 
 // 日期
@@ -134,120 +85,77 @@ function getDates(s,e){
   let arr=[];
   let d=new Date(s);
   while(d<=new Date(e)){
-    arr.push(d.toISOString().slice(0,10));
+    arr.push(new Date(d));
     d.setDate(d.getDate()+1);
   }
   return arr;
 }
 
-// 自動排班
+// 排班（核心邏輯）
 function auto(){
 
-  schedule = [];
-  let warn = {};
+  let start=document.getElementById("start").value;
+  let end=document.getElementById("end").value;
 
-  let start = document.getElementById("start").value;
-  let end = document.getElementById("end").value;
-
-  if(!start || !end){
+  if(!start||!end){
     alert("請選日期");
     return;
   }
 
-  let dates = getDates(start,end);
+  let dates=getDates(start,end);
+  let html="";
 
-  dates.forEach(date=>{
+  dates.forEach(d=>{
 
-    ["A","B"].forEach(store=>{
+    html+=`<h3>${d.toLocaleDateString()}</h3>`;
 
-      for(let h=9;h<=23;h++){
+    // ===== 大安 =====
+    html+="<b>大安</b><br>";
 
-        let need = 1;
+    let daan=employees.filter(e=>e.store=="大安");
 
-        let mainEmp = employees.filter(e=>
-          e.mainStore === store &&
-          e.hours.includes(h) &&
-          !e.off.includes(date)
-        );
+    // 早班（會煮茶）
+    let early=daan.filter(e=>e.tea);
 
-        let supportEmp = employees.filter(e=>
-          e.supportStores.includes(store) &&
-          e.hours.includes(h) &&
-          !e.off.includes(date)
-        );
+    if(early.length>0){
+      html+=`10:00-22:00 ${early[0].name}<br>`;
+    }else{
+      html+=`<span class="warn">缺早班</span><br>`;
+    }
 
-        let assigned = [];
+    // 晚班
+    let late=daan.filter(e=>!e.tea || true);
 
-        if(mainEmp.length >= need){
-          assigned = mainEmp.slice(0,need);
-        }else{
-          assigned = [...mainEmp];
-          let remain = need - mainEmp.length;
-          assigned.push(...supportEmp.slice(0,remain));
-        }
+    if(late.length>1){
+      html+=`11:00-23:00 ${late[1].name}<br>`;
+    }else{
+      html+=`<span class="warn">缺晚班</span><br>`;
+    }
 
-        if(assigned.length < need){
-          warn[`${date} ${store} ${h}:00`] = need - assigned.length;
-        }
+    // ===== 遼寧 =====
+    html+="<b>遼寧</b><br>";
 
-        assigned.forEach(e=>{
-          schedule.push({
-            date,
-            store,
-            hour:h,
-            name:e.name
-          });
-        });
+    let liaoning=employees.filter(e=>e.store=="遼寧");
 
-      }
+    let early2=liaoning.filter(e=>e.tea);
 
-    });
+    if(early2.length>0){
+      html+=`10:00-22:00 ${early2[0].name}<br>`;
+    }else{
+      html+=`<span class="warn">缺早班</span><br>`;
+    }
+
+    let late2=liaoning;
+
+    if(late2.length>1){
+      html+=`11:00-22:00 ${late2[1].name}<br>`;
+    }else{
+      html+=`<span class="warn">缺晚班</span><br>`;
+    }
 
   });
 
-  render();
-  renderWarn(warn);
-}
-
-// 顯示班表
-function render(){
-  document.getElementById("result").innerHTML =
-    schedule.map(s=>
-      `${s.date} ${s.store} ${s.hour}:00 - ${s.name}`
-    ).join("<br>");
-}
-
-// 缺人提醒
-function renderWarn(w){
-  let html = Object.entries(w)
-    .map(([k,v])=>`<div class="warn">${k} 缺 ${v} 人</div>`)
-    .join("");
-
-  document.getElementById("warn").innerHTML = html || "沒有缺人";
-}
-
-// ICS輸出
-function exportICS(){
-
-  let ics="BEGIN:VCALENDAR\nVERSION:2.0\n";
-
-  schedule.forEach(s=>{
-    let d = s.date.replace(/-/g,"");
-    ics+=`
-BEGIN:VEVENT
-SUMMARY:${s.name} (${s.store})
-DTSTART:${d}T${String(s.hour).padStart(2,'0')}0000
-DTEND:${d}T${String(s.hour+1).padStart(2,'0')}0000
-END:VEVENT`;
-  });
-
-  ics+="\nEND:VCALENDAR";
-
-  let blob=new Blob([ics],{type:"text/calendar"});
-  let a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="shift.ics";
-  a.click();
+  document.getElementById("result").innerHTML=html;
 }
 
 </script>
