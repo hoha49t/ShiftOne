@@ -2,19 +2,20 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>ShiftOne v3.7</title>
+<title>ShiftOne v3.9</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
 body { font-family:sans-serif; padding:10px;}
 .card { border:1px solid #ccc; padding:10px; margin:10px 0;}
 .warn { color:red;}
+.emp { margin:5px 0; }
 </style>
 </head>
 
 <body>
 
-<h2>ShiftOne v3.7（營運版）</h2>
+<h2>ShiftOne v3.9（營運版）</h2>
 
 <div class="card">
 開始：<input type="date" id="start">
@@ -34,21 +35,33 @@ body { font-family:sans-serif; padding:10px;}
 
 <br><br>
 
-主店：
-<select id="store">
-  <option>大安</option>
-  <option>遼寧</option>
+店別：
+<select id="storeMode">
+  <option value="大安">固定大安</option>
+  <option value="遼寧">固定遼寧</option>
+  <option value="flex">可調店</option>
 </select>
 
 <br><br>
 
 <label>
-  <input type="checkbox" id="tea"> 會煮茶（可上早班）
+  <input type="checkbox" id="tea"> 會煮茶（早班）
 </label>
 
 <br><br>
 
+<h4>休假</h4>
+<input type="date" id="offDate">
+<button onclick="addOff()">加入</button>
+<div id="offList"></div>
+
+<br>
 <button onclick="addEmp()">新增員工</button>
+</div>
+
+<div class="card">
+<h3>員工列表</h3>
+<div id="empList"></div>
 </div>
 
 <div class="card">
@@ -63,21 +76,67 @@ body { font-family:sans-serif; padding:10px;}
 <script>
 
 let employees=[];
+let offTemp=[];
+
+// 加休假
+function addOff(){
+  let d=offDate.value;
+  if(d){
+    offTemp.push(d);
+    offList.innerText=offTemp.join(",");
+  }
+}
 
 // 新增員工
 function addEmp(){
 
-  let name=document.getElementById("name").value.trim();
-  if(!name){ alert("請輸入姓名"); return; }
+  let n=name.value.trim();
+  if(!n){ alert("請輸入姓名"); return; }
 
-  let type=document.getElementById("type").value;
-  let store=document.getElementById("store").value;
+  let t=type.value;
+  let storeMode=storeMode.value;
   let tea=document.getElementById("tea").checked;
 
-  employees.push({name,type,store,tea});
+  let lower=n.toLowerCase();
 
-  alert("已新增 "+name);
-  document.getElementById("name").value="";
+  // 固定規則
+  if(lower=="joe"){
+    storeMode="大安";
+  }
+
+  if(n=="翊安"){
+    storeMode="大安";
+  }
+
+  if(n=="曉鈴"){
+    storeMode="遼寧";
+  }
+
+  employees.push({
+    name:n,
+    type:t,
+    storeMode:storeMode,
+    tea:tea,
+    off:[...offTemp]
+  });
+
+  alert("已新增 "+n);
+
+  name.value="";
+  offTemp=[];
+  offList.innerText="";
+
+  renderEmp();
+}
+
+// 顯示員工
+function renderEmp(){
+  empList.innerHTML=employees.map(e=>
+    `<div class="emp">
+      ${e.name}｜${e.type}｜${e.storeMode}｜${e.tea?"會煮茶":"-"}
+      <br>休假：${e.off.join(",")||"無"}
+    </div>`
+  ).join("");
 }
 
 // 日期
@@ -91,11 +150,17 @@ function getDates(s,e){
   return arr;
 }
 
-// 排班（核心邏輯）
+// 判斷 joe 固定休假（3,6,日）
+function isJoeOff(date){
+  let day=date.getDay(); // 0日
+  return (day==3 || day==6 || day==0);
+}
+
+// 排班
 function auto(){
 
-  let start=document.getElementById("start").value;
-  let end=document.getElementById("end").value;
+  let start=startInput.value;
+  let end=endInput.value;
 
   if(!start||!end){
     alert("請選日期");
@@ -107,24 +172,29 @@ function auto(){
 
   dates.forEach(d=>{
 
+    let dateStr=d.toISOString().slice(0,10);
+
     html+=`<h3>${d.toLocaleDateString()}</h3>`;
 
     // ===== 大安 =====
     html+="<b>大安</b><br>";
 
-    let daan=employees.filter(e=>e.store=="大安");
+    let daan=employees.filter(e=>{
 
-    // 早班（會煮茶）
+      if(e.name.toLowerCase()=="joe" && isJoeOff(d)) return false;
+
+      return (e.storeMode=="大安" || e.storeMode=="flex") &&
+             !e.off.includes(dateStr);
+    });
+
     let early=daan.filter(e=>e.tea);
+    let late=daan;
 
     if(early.length>0){
       html+=`10:00-22:00 ${early[0].name}<br>`;
     }else{
       html+=`<span class="warn">缺早班</span><br>`;
     }
-
-    // 晚班
-    let late=daan.filter(e=>!e.tea || true);
 
     if(late.length>1){
       html+=`11:00-23:00 ${late[1].name}<br>`;
@@ -135,9 +205,15 @@ function auto(){
     // ===== 遼寧 =====
     html+="<b>遼寧</b><br>";
 
-    let liaoning=employees.filter(e=>e.store=="遼寧");
+    let ln=employees.filter(e=>{
 
-    let early2=liaoning.filter(e=>e.tea);
+      if(e.name.toLowerCase()=="joe" && isJoeOff(d)) return false;
+
+      return (e.storeMode=="遼寧" || e.storeMode=="flex") &&
+             !e.off.includes(dateStr);
+    });
+
+    let early2=ln.filter(e=>e.tea);
 
     if(early2.length>0){
       html+=`10:00-22:00 ${early2[0].name}<br>`;
@@ -145,17 +221,15 @@ function auto(){
       html+=`<span class="warn">缺早班</span><br>`;
     }
 
-    let late2=liaoning;
-
-    if(late2.length>1){
-      html+=`11:00-22:00 ${late2[1].name}<br>`;
+    if(ln.length>1){
+      html+=`11:00-22:00 ${ln[1].name}<br>`;
     }else{
       html+=`<span class="warn">缺晚班</span><br>`;
     }
 
   });
 
-  document.getElementById("result").innerHTML=html;
+  result.innerHTML=html;
 }
 
 </script>
