@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>ShiftOne v3.9</title>
+<title>ShiftOne v4.0（穩定修正版）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -15,7 +15,7 @@ body { font-family:sans-serif; padding:10px;}
 
 <body>
 
-<h2>ShiftOne v3.9（營運版）</h2>
+<h2>ShiftOne v4.0（穩定版）</h2>
 
 <div class="card">
 開始：<input type="date" id="start">
@@ -78,39 +78,43 @@ body { font-family:sans-serif; padding:10px;}
 let employees=[];
 let offTemp=[];
 
+// 👉 DOM 全部先抓好（關鍵修正）
+const nameInput = document.getElementById("name");
+const typeSelect = document.getElementById("type");
+const storeSelect = document.getElementById("storeMode");
+const teaCheck = document.getElementById("tea");
+const offDateInput = document.getElementById("offDate");
+const offListDiv = document.getElementById("offList");
+const empListDiv = document.getElementById("empList");
+const startInput = document.getElementById("start");
+const endInput = document.getElementById("end");
+const resultDiv = document.getElementById("result");
+
 // 加休假
 function addOff(){
-  let d=offDate.value;
+  let d = offDateInput.value;
   if(d){
     offTemp.push(d);
-    offList.innerText=offTemp.join(",");
+    offListDiv.innerText = offTemp.join(",");
   }
 }
 
 // 新增員工
 function addEmp(){
 
-  let n=name.value.trim();
+  let n = nameInput.value.trim();
   if(!n){ alert("請輸入姓名"); return; }
 
-  let t=type.value;
-  let storeMode=storeMode.value;
-  let tea=document.getElementById("tea").checked;
+  let t = typeSelect.value;
+  let storeMode = storeSelect.value;
+  let tea = teaCheck.checked;
 
-  let lower=n.toLowerCase();
+  let lower = n.toLowerCase();
 
   // 固定規則
-  if(lower=="joe"){
-    storeMode="大安";
-  }
-
-  if(n=="翊安"){
-    storeMode="大安";
-  }
-
-  if(n=="曉鈴"){
-    storeMode="遼寧";
-  }
+  if(lower=="joe") storeMode="大安";
+  if(n=="翊安") storeMode="大安";
+  if(n=="曉鈴") storeMode="遼寧";
 
   employees.push({
     name:n,
@@ -122,16 +126,17 @@ function addEmp(){
 
   alert("已新增 "+n);
 
-  name.value="";
+  // 清空
+  nameInput.value="";
   offTemp=[];
-  offList.innerText="";
+  offListDiv.innerText="";
 
   renderEmp();
 }
 
-// 顯示員工
+// 顯示員工（修好）
 function renderEmp(){
-  empList.innerHTML=employees.map(e=>
+  empListDiv.innerHTML = employees.map(e=>
     `<div class="emp">
       ${e.name}｜${e.type}｜${e.storeMode}｜${e.tea?"會煮茶":"-"}
       <br>休假：${e.off.join(",")||"無"}
@@ -150,19 +155,19 @@ function getDates(s,e){
   return arr;
 }
 
-// 判斷 joe 固定休假（3,6,日）
+// joe固定休假
 function isJoeOff(date){
-  let day=date.getDay(); // 0日
+  let day=date.getDay();
   return (day==3 || day==6 || day==0);
 }
 
-// 排班
+// 排班（修好）
 function auto(){
 
   let start=startInput.value;
   let end=endInput.value;
 
-  if(!start||!end){
+  if(!start || !end){
     alert("請選日期");
     return;
   }
@@ -176,19 +181,16 @@ function auto(){
 
     html+=`<h3>${d.toLocaleDateString()}</h3>`;
 
-    // ===== 大安 =====
+    // 大安
     html+="<b>大安</b><br>";
 
     let daan=employees.filter(e=>{
-
       if(e.name.toLowerCase()=="joe" && isJoeOff(d)) return false;
-
       return (e.storeMode=="大安" || e.storeMode=="flex") &&
              !e.off.includes(dateStr);
     });
 
     let early=daan.filter(e=>e.tea);
-    let late=daan;
 
     if(early.length>0){
       html+=`10:00-22:00 ${early[0].name}<br>`;
@@ -196,19 +198,17 @@ function auto(){
       html+=`<span class="warn">缺早班</span><br>`;
     }
 
-    if(late.length>1){
-      html+=`11:00-23:00 ${late[1].name}<br>`;
+    if(daan.length>1){
+      html+=`11:00-23:00 ${daan[1].name}<br>`;
     }else{
       html+=`<span class="warn">缺晚班</span><br>`;
     }
 
-    // ===== 遼寧 =====
+    // 遼寧
     html+="<b>遼寧</b><br>";
 
     let ln=employees.filter(e=>{
-
       if(e.name.toLowerCase()=="joe" && isJoeOff(d)) return false;
-
       return (e.storeMode=="遼寧" || e.storeMode=="flex") &&
              !e.off.includes(dateStr);
     });
@@ -229,7 +229,7 @@ function auto(){
 
   });
 
-  result.innerHTML=html;
+  resultDiv.innerHTML=html;
 }
 
 </script>
